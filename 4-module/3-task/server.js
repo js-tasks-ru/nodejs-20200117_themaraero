@@ -12,22 +12,25 @@ server.on('request', (req, res) => {
 
   switch (req.method) {
     case 'DELETE':
-      if (pathname.includes('/')) {
+      fs.unlink(filepath, (error) => {
+        if (error) {
+          if (error.code === 'ENOENT') {
+            res.statusCode = 404;
+            res.end('Not found');
+          } else {
+            res.statusCode = 500;
+            res.end('Internal error');
+          }
+        } else {
+          res.statusCode = 200;
+          res.end('Ok');
+        }
+      });
+
+      if (pathname.includes('/') || pathname.includes('..')) {
         res.statusCode = 400;
-        res.end();
-        return;
+        res.end('Nested paths are not allowed');
       }
-
-      if (!fs.existsSync(filepath)) {
-        res.statusCode = 404;
-        res.end();
-        return;
-      }
-
-      fs.unlink(filepath, () => {
-        res.statusCode = 200;
-        res.end();
-      })
       break;
 
     default:

@@ -3,7 +3,7 @@ const url = require('url');
 const http = require('http');
 const path = require('path');
 
-const LimitSizeStream = require('../../2-module/1-task/LimitSizeStream');
+const LimitSizeStream = require('./LimitSizeStream');
 
 const server = new http.Server();
 
@@ -14,42 +14,55 @@ server.on('request', (req, res) => {
 
   switch (req.method) {
     case 'POST':
-      if (fs.existsSync(filepath)) {
-        res.statusCode = 409;
-        res.end();
+      const writeStream = fs.createWriteStream(filepath, {flags: 'wx'});
+      req.pipe(writeStream);
+
+      writeStream.on('error', (error) => {
+        if (error.code === 'EEXIST') {
+          res.statusCode = 409;
+          res.end('File exists');
+        } else {
+          res.statusCode = 500;
+          res.end('Internal server error');
+          fs.unlink(filepath, () => {});
+        }
+      });
+
+      writeStream.on('close', () => {
+        res.statusCode = 201;
+        res.end('file has been saved');
+      });
+
+      res.on('close', () => {
+        if (res.finished) return;
+        fs.unlink(filepath, () => {});
+      });
+
+      if (req.headers['content-length'] > 1e6) {
+        res.statusCode = 413;
+        res.end('File is too big!');
         return;
-      } else if (pathname.includes('/')) {
+      }
+
+      const limitStream = new LimitSizeStream({limit: 1e6});
+
+      req.pipe(limitStream).pipe(writeStream);
+
+      limitStream.on('error', (error) => {
+        if (error.code === 'LIMIT_EXCEEDED') {
+          res.statusCode = 413;
+          res.end('File is too big');
+        } else {
+          res.statusCode = 500;
+          res.end('Internal server error');
+        }
+
+        fs.unlink(filepath, () => {});
+      });
+
+      if (pathname.includes('/') || pathname.includes('..')) {
         res.statusCode = 400;
-        res.end();
-      } else {
-        const limitStream = new LimitSizeStream({limit: 2 ** 20});
-        const writeStream = fs.createWriteStream(filepath);
-
-        req.pipe(limitStream).pipe(writeStream);
-
-        limitStream.on('error', (err) => {
-          fs.unlink(filepath, () => {
-            writeStream.destroy();
-            limitStream.destroy();
-
-            res.statusCode = 413;
-            res.end();
-          });
-        });
-
-        req.on('aborted', () => {
-          fs.unlink(filepath, () => {
-            writeStream.destroy();
-            res.end();
-          });
-        });
-
-        writeStream.on('error', () => {});
-
-        writeStream.on('finish', () => {
-          res.statusCode = 201;
-          res.end();
-        });
+        res.end('Nested paths are not allowed');
       }
       break;
 
