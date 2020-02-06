@@ -12,29 +12,29 @@ server.on('request', (req, res) => {
 
   switch (req.method) {
     case 'GET':
-      if (fs.existsSync(filepath)) {
-        res.statusCode = 200;
-        const readStream = fs.createReadStream(filepath);
+      const readStream = fs.createReadStream(filepath);
+      readStream.pipe(res);
 
-        readStream.on('open', () => {
-          readStream.pipe(res);
-        });
-
-        readStream.on('error', () => {
+      readStream.on('error', (error) => {
+        if (error.code === 'ENOENT') {
+          res.statusCode = 404;
+          res.end('File not found');
+        } else {
           res.statusCode = 500;
-          res.end();
-        });
+          res.end('Internal server error');
+        }
+      });
 
-        readStream.on('close', () => {
-          res.end();
-        });
-      } else if (pathname.includes('/')) {
+      res.on('close', () => {
+        if (res.finished) return;
+        readStream.destroy();
+      });
+
+      if (pathname.includes('/') || pathname.includes('..')) {
         res.statusCode = 400;
-        res.end();
-      } else {
-        res.statusCode = 404;
-        res.end();
+        res.end('Nested paths are not allowed');
       }
+
       break;
 
     default:
