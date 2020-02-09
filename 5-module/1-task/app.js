@@ -7,14 +7,17 @@ app.use(require('koa-bodyparser')());
 const Router = require('koa-router');
 const router = new Router();
 
-let subscribers = [];
+const subscribers = new Set();
 
 router.get('/subscribe', async (ctx, next) => {
-  const promise = new Promise((resolve) => {
-    subscribers.push(resolve);
-  });
+  const message = await new Promise((resolve) => {
+    subscribers.add(resolve);
 
-  const message = await promise;
+    ctx.res.on('close', function() {
+      subscribers.delete(resolve);
+      resolve();
+    });
+  });
 
   ctx.body = message;
 });
@@ -22,15 +25,17 @@ router.get('/subscribe', async (ctx, next) => {
 router.post('/publish', async (ctx, next) => {
   const message = ctx.request.body.message;
 
-  if (message) {
-    subscribers.forEach((resolve) => {
-      resolve(message);
-    });
-
-    subscribers = [];
-
-    ctx.status = 200;
+  if (!message) {
+    ctx.throw(400, 'required field `message` is missing');
   }
+
+  subscribers.forEach((resolve) => {
+    resolve(message);
+  });
+
+  subscribers.clear();
+
+  ctx.body = 'ok';
 });
 
 app.use(router.routes());
