@@ -1,3 +1,8 @@
+const CategoryModel = require('../models/Category');
+const categoryMapper = require('../mappers/categoryMapper');
+
 module.exports.categoryList = async function categoryList(ctx, next) {
-  ctx.body = {categories: []};
+  const categories = await CategoryModel.find();
+
+  ctx.body = {categories: categories.map(categoryMapper)};
 };
